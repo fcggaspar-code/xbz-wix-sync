@@ -1,0 +1,13 @@
+{
+  "name": "xbz-wix-sync",
+  "version": "1.0.0",
+  "description": "Sincronização automática de produtos XBZ para Wix",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "sync": "node index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
