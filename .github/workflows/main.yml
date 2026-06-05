@@ -1,0 +1,19 @@
+name: Sincronização XBZ → Wix
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # 5h horário de Brasília (8h UTC)
+  workflow_dispatch:      # permite rodar manualmente
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Rodar sincronização
+        env:
+          WIX_TOKEN: ${{ secrets.WIX_TOKEN }}
+        run: node index.js
