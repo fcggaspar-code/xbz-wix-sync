@@ -11,7 +11,7 @@ const CONFIG = {
   XBZ_API: 'https://api.minhaxbz.com.br:5001/api/clientes/ProdutosListar',
 
   // Wix
-  WIX_TOKEN: 'COLE_SEU_TOKEN_WIX_AQUI',
+  WIX_TOKEN: WIX_TOKEN: process.env.WIX_TOKEN,
   WIX_SITE_ID: '4909da33-ea43-4dee-8d96-7ad33b7175af',
   WIX_API_BASE: 'https://www.wixapis.com',
 };
