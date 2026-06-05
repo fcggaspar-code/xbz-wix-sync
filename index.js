@@ -180,11 +180,20 @@ async function createWixProduct(xbzProduct) {
   // Adicionar imagem se disponível
   if (xbzProduct.imageLink) {
     body.product.media = {
+      mainMedia: {
+        image: {
+          url: xbzProduct.imageLink,
+          altText: truncate(xbzProduct.descricao, 80)
+        }
+      },
       items: [
         {
-          image: { url: xbzProduct.imageLink },
-        },
-      ],
+          image: {
+            url: xbzProduct.imageLink,
+            altText: truncate(xbzProduct.descricao, 80)
+          }
+        }
+      ]
     };
   }
 
