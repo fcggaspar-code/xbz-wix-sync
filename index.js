@@ -37,6 +37,16 @@ function sanitizeSlug(str) {
     .replace(/^-|-$/g, '');
 }
 
+function getProductName(product) {
+  if (product.descricao && product.descricao.trim().length > 0) {
+    return truncate(product.descricao.trim(), 80);
+  }
+  if (product.codigoXbz && product.codigoXbz.trim().length > 0) {
+    return truncate(product.codigoXbz.trim(), 80);
+  }
+  return 'Produto sem nome';
+}
+
 // ============================================================
 // REQUISIÇÃO HTTP GENÉRICA
 // ============================================================
@@ -151,11 +161,12 @@ async function getWixProductSkus() {
 // ============================================================
 async function createWixProduct(xbzProduct) {
   const slug = sanitizeSlug(`${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
+  const name = getProductName(xbzProduct);
 
   const body = {
     product: {
-      name: truncate(xbzProduct.descricao, 80),
-      plainDescription: xbzProduct.descricao || '',
+      name: name,
+      plainDescription: xbzProduct.descricao || name,
       productType: 'PHYSICAL',
       slug: slug,
       visible: false,
@@ -178,22 +189,22 @@ async function createWixProduct(xbzProduct) {
   };
 
   // Adicionar imagem se disponível
-  if (xbzProduct.imageLink) {
+  if (xbzProduct.imageLink && xbzProduct.imageLink.trim().length > 0) {
     body.product.media = {
       mainMedia: {
         image: {
-          url: xbzProduct.imageLink,
-          altText: truncate(xbzProduct.descricao, 80)
-        }
+          url: xbzProduct.imageLink.trim(),
+          altText: truncate(name, 80),
+        },
       },
       items: [
         {
           image: {
-            url: xbzProduct.imageLink,
-            altText: truncate(xbzProduct.descricao, 80)
-          }
-        }
-      ]
+            url: xbzProduct.imageLink.trim(),
+            altText: truncate(name, 80),
+          },
+        },
+      ],
     };
   }
 
@@ -255,13 +266,13 @@ async function sync() {
           }
         } else {
           erros++;
-          if (erros <= 5) {
-            console.warn(`   ⚠️ Erro no produto ${product.codigoXbz}: ${result.status} - ${result.body.substring(0, 100)}`);
+          if (erros <= 10) {
+            console.warn(`   ⚠️ Erro no produto ${product.codigoXbz}: ${result.status} - ${result.body.substring(0, 150)}`);
           }
         }
       } catch (err) {
         erros++;
-        if (erros <= 5) {
+        if (erros <= 10) {
           console.warn(`   ⚠️ Exceção no produto ${product.codigoXbz}: ${err.message}`);
         }
       }
