@@ -70,11 +70,10 @@ async function getXbzProducts() {
 }
 
 async function createWixProduct(xbzProduct) {
-  const slug = sanitizeSlug(`teste2-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
+  const slug = sanitizeSlug(`teste3-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
   const name = getProductName(xbzProduct);
   const imageUrl = xbzProduct.imageLink.trim();
 
-  // Usando endpoint products-with-inventory para criar produto + estoque numa chamada
   const body = {
     product: {
       name: name,
@@ -82,6 +81,12 @@ async function createWixProduct(xbzProduct) {
       productType: 'PHYSICAL',
       slug: slug,
       visible: false,
+      physicalProperties: {
+        shippingWeightRange: {
+          minValue: 0,
+          maxValue: 1,
+        },
+      },
       media: {
         mainMedia: {
           image: {
@@ -101,13 +106,9 @@ async function createWixProduct(xbzProduct) {
       variantsInfo: {
         variants: [
           {
-            sku: `TESTE2-${xbzProduct.codigoXbz}`,
+            sku: `TESTE3-${xbzProduct.codigoXbz}`,
             price: {
               actualPrice: { amount: '10.00' },
-            },
-            physicalProperties: {
-              weight: 0,
-              shippingRequired: true,
             },
             inventoryItem: {
               trackingMethod: 'QUANTITY',
@@ -144,7 +145,7 @@ async function createWixProduct(xbzProduct) {
 }
 
 async function sync() {
-  console.log('🧪 TESTE v2 — produtos-with-inventory + media no produto');
+  console.log('🧪 TESTE v3 — products-with-inventory + physicalProperties no produto');
   console.log(`📅 ${new Date().toLocaleString('pt-BR')}`);
   console.log('='.repeat(50));
 
