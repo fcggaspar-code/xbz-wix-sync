@@ -54,9 +54,6 @@ function request(url, options = {}, body = null) {
   });
 }
 
-// ============================================================
-// IMPORTAR IMAGEM PARA O WIX MEDIA MANAGER
-// ============================================================
 async function importImageToWix(imageUrl, fileName) {
   const body = {
     url: imageUrl,
@@ -83,18 +80,16 @@ async function importImageToWix(imageUrl, fileName) {
   }
 
   const data = JSON.parse(res.body);
-  console.log(`   📷 Resposta completa do import:`, JSON.stringify(data.file, null, 2));
-
   const fileId = data.file?.id;
-  // Formato correto da URL Wix: wix:image://v1/{fileId}/{filename}
-  const wixImageUrl = `wix:image://v1/${fileId}/${fileName}#originWidth=800&originHeight=800`;
+  // Usar URL direta do wixstatic.com que já está disponível imediatamente
+  const staticUrl = data.file?.url;
 
-  return { fileId, wixImageUrl };
+  console.log(`   📷 FileId: ${fileId}`);
+  console.log(`   🌐 URL estática: ${staticUrl}`);
+
+  return { fileId, staticUrl };
 }
 
-// ============================================================
-// BUSCAR PRODUTOS DA XBZ
-// ============================================================
 async function getXbzProducts() {
   console.log('🔄 Buscando produtos da XBZ...');
   const res = await request(CONFIG.XBZ_API, {
@@ -105,15 +100,11 @@ async function getXbzProducts() {
   const products = JSON.parse(res.body);
   const comFoto = products.filter(p => p.imageLink && p.imageLink.trim().length > 0);
   console.log(`✅ ${products.length} produtos | 📷 ${comFoto.length} com foto`);
-  const teste = comFoto.slice(0, CONFIG.LIMITE_TESTE);
-  return teste;
+  return comFoto.slice(0, CONFIG.LIMITE_TESTE);
 }
 
-// ============================================================
-// CRIAR PRODUTO NO WIX
-// ============================================================
-async function createWixProduct(xbzProduct, wixImageUrl) {
-  const slug = sanitizeSlug(`teste5-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
+async function createWixProduct(xbzProduct, staticUrl) {
+  const slug = sanitizeSlug(`teste6-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
   const name = getProductName(xbzProduct);
 
   const body = {
@@ -129,14 +120,14 @@ async function createWixProduct(xbzProduct, wixImageUrl) {
       media: {
         mainMedia: {
           image: {
-            url: wixImageUrl,
+            url: staticUrl,
             altText: truncate(name, 80),
           },
         },
         items: [
           {
             image: {
-              url: wixImageUrl,
+              url: staticUrl,
               altText: truncate(name, 80),
             },
           },
@@ -145,7 +136,7 @@ async function createWixProduct(xbzProduct, wixImageUrl) {
       variantsInfo: {
         variants: [
           {
-            sku: `TESTE5-${xbzProduct.codigoXbz}`,
+            sku: `TESTE6-${xbzProduct.codigoXbz}`,
             price: {
               actualPrice: { amount: '10.00' },
             },
@@ -180,11 +171,8 @@ async function createWixProduct(xbzProduct, wixImageUrl) {
   return { status: res.status, body: res.body };
 }
 
-// ============================================================
-// SINCRONIZAÇÃO PRINCIPAL
-// ============================================================
 async function sync() {
-  console.log('🧪 TESTE v5 — wix:image URL format');
+  console.log('🧪 TESTE v6 — URL estática wixstatic.com');
   console.log(`📅 ${new Date().toLocaleString('pt-BR')}`);
   console.log('='.repeat(50));
 
@@ -198,16 +186,13 @@ async function sync() {
       console.log(`\n📦 Produto: ${getProductName(product)}`);
 
       try {
-        // 1. Importar imagem para o Wix Media Manager
         const fileName = product.imageLink.trim().split('/').pop();
-        const { wixImageUrl } = await importImageToWix(product.imageLink.trim(), fileName);
-        console.log(`   URL Wix: ${wixImageUrl}`);
+        const { staticUrl } = await importImageToWix(product.imageLink.trim(), fileName);
 
-        // 2. Aguardar processamento
-        await sleep(5000);
+        // Aguardar processamento
+        await sleep(3000);
 
-        // 3. Criar produto
-        const result = await createWixProduct(product, wixImageUrl);
+        const result = await createWixProduct(product, staticUrl);
 
         if (result.status === 200 || result.status === 201) {
           criados++;
