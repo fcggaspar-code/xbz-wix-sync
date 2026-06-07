@@ -126,7 +126,8 @@ async function importAndWaitImage(imageUrl, fileName) {
 // BUSCAR PRODUTOS DA XBZ
 // ============================================================
 async function getXbzProducts() {
-  console.log('🔄 Buscando produtos da XBZ...');
+  console.log(`   Wix Stores status: ${res.status}`);
+console.log(`   Resposta: ${res.body.substring(0, 500)}`);
   const res = await request(CONFIG.XBZ_API, {
     method: 'GET',
     headers: { 'cnpj': CONFIG.XBZ_CNPJ, 'token': CONFIG.XBZ_TOKEN },
