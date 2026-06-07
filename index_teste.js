@@ -83,11 +83,13 @@ async function importImageToWix(imageUrl, fileName) {
   }
 
   const data = JSON.parse(res.body);
-  const fileId = data.file?.id;
-  const wixUrl = data.file?.url || `wix:image://v1/${fileId}`;
+  console.log(`   📷 Resposta completa do import:`, JSON.stringify(data.file, null, 2));
 
-  console.log(`   📷 Imagem importada: ${fileId}`);
-  return { fileId, wixUrl };
+  const fileId = data.file?.id;
+  // Formato correto da URL Wix: wix:image://v1/{fileId}/{filename}
+  const wixImageUrl = `wix:image://v1/${fileId}/${fileName}#originWidth=800&originHeight=800`;
+
+  return { fileId, wixImageUrl };
 }
 
 // ============================================================
@@ -104,7 +106,6 @@ async function getXbzProducts() {
   const comFoto = products.filter(p => p.imageLink && p.imageLink.trim().length > 0);
   console.log(`✅ ${products.length} produtos | 📷 ${comFoto.length} com foto`);
   const teste = comFoto.slice(0, CONFIG.LIMITE_TESTE);
-  console.log(`🧪 Testando com ${teste.length} produtos`);
   return teste;
 }
 
@@ -112,7 +113,7 @@ async function getXbzProducts() {
 // CRIAR PRODUTO NO WIX
 // ============================================================
 async function createWixProduct(xbzProduct, wixImageUrl) {
-  const slug = sanitizeSlug(`teste4-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
+  const slug = sanitizeSlug(`teste5-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
   const name = getProductName(xbzProduct);
 
   const body = {
@@ -144,7 +145,7 @@ async function createWixProduct(xbzProduct, wixImageUrl) {
       variantsInfo: {
         variants: [
           {
-            sku: `TESTE4-${xbzProduct.codigoXbz}`,
+            sku: `TESTE5-${xbzProduct.codigoXbz}`,
             price: {
               actualPrice: { amount: '10.00' },
             },
@@ -183,7 +184,7 @@ async function createWixProduct(xbzProduct, wixImageUrl) {
 // SINCRONIZAÇÃO PRINCIPAL
 // ============================================================
 async function sync() {
-  console.log('🧪 TESTE v4 — Import Image + Create Product');
+  console.log('🧪 TESTE v5 — wix:image URL format');
   console.log(`📅 ${new Date().toLocaleString('pt-BR')}`);
   console.log('='.repeat(50));
 
@@ -195,24 +196,22 @@ async function sync() {
 
     for (const product of xbzProducts) {
       console.log(`\n📦 Produto: ${getProductName(product)}`);
-      console.log(`   URL foto XBZ: ${product.imageLink}`);
 
       try {
         // 1. Importar imagem para o Wix Media Manager
-        const { wixUrl } = await importImageToWix(
-          product.imageLink.trim(),
-          `${product.codigoXbz}.jpg`
-        );
+        const fileName = product.imageLink.trim().split('/').pop();
+        const { wixImageUrl } = await importImageToWix(product.imageLink.trim(), fileName);
+        console.log(`   URL Wix: ${wixImageUrl}`);
 
-        // Aguardar imagem processar
-        await sleep(2000);
+        // 2. Aguardar processamento
+        await sleep(5000);
 
-        // 2. Criar produto com a imagem do Wix
-        const result = await createWixProduct(product, wixUrl);
+        // 3. Criar produto
+        const result = await createWixProduct(product, wixImageUrl);
 
         if (result.status === 200 || result.status === 201) {
           criados++;
-          console.log(`   ✅ Produto criado com sucesso!`);
+          console.log(`   ✅ Produto criado!`);
         } else {
           erros++;
         }
