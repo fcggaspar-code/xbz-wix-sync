@@ -8,7 +8,8 @@ const CONFIG = {
   WIX_TOKEN: process.env.WIX_TOKEN,
   WIX_SITE_ID: '4909da33-ea43-4dee-8d96-7ad33b7175af',
   WIX_API_BASE: 'https://www.wixapis.com',
-  LIMITE_TESTE: 3,
+  WIX_COLLECTION: 'ProdutosXBZ',
+  LIMITE_TESTE: 5,
 };
 
 function sleep(ms) {
@@ -20,14 +21,9 @@ function truncate(str, max) {
   return str.length > max ? str.substring(0, max) : str;
 }
 
-function sanitizeSlug(str) {
-  if (!str) return '';
-  return str.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-}
-
 function getProductName(product) {
-  if (product.descricao && product.descricao.trim().length > 0) return truncate(product.descricao.trim(), 80);
-  if (product.codigoXbz && product.codigoXbz.trim().length > 0) return truncate(product.codigoXbz.trim(), 80);
+  if (product.descricao && product.descricao.trim().length > 0) return truncate(product.descricao.trim(), 200);
+  if (product.codigoXbz && product.codigoXbz.trim().length > 0) return product.codigoXbz.trim();
   return 'Produto sem nome';
 }
 
@@ -54,42 +50,6 @@ function request(url, options = {}, body = null) {
   });
 }
 
-async function importImageToWix(imageUrl, fileName) {
-  const body = {
-    url: imageUrl,
-    mimeType: 'image/jpeg',
-    mediaType: 'IMAGE',
-    displayName: fileName,
-  };
-
-  const res = await request(
-    `${CONFIG.WIX_API_BASE}/site-media/v1/files/import`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${CONFIG.WIX_TOKEN}`,
-        'wix-site-id': CONFIG.WIX_SITE_ID,
-        'Content-Type': 'application/json',
-      },
-    },
-    body
-  );
-
-  if (res.status !== 200 && res.status !== 201) {
-    throw new Error(`Erro ao importar imagem: ${res.status} - ${res.body.substring(0, 200)}`);
-  }
-
-  const data = JSON.parse(res.body);
-  const fileId = data.file?.id;
-  // Usar URL direta do wixstatic.com que já está disponível imediatamente
-  const staticUrl = data.file?.url;
-
-  console.log(`   📷 FileId: ${fileId}`);
-  console.log(`   🌐 URL estática: ${staticUrl}`);
-
-  return { fileId, staticUrl };
-}
-
 async function getXbzProducts() {
   console.log('🔄 Buscando produtos da XBZ...');
   const res = await request(CONFIG.XBZ_API, {
@@ -103,55 +63,28 @@ async function getXbzProducts() {
   return comFoto.slice(0, CONFIG.LIMITE_TESTE);
 }
 
-async function createWixProduct(xbzProduct, staticUrl) {
-  const slug = sanitizeSlug(`teste6-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
+async function createCmsItem(xbzProduct) {
   const name = getProductName(xbzProduct);
 
   const body = {
-    product: {
-      name: name,
-      plainDescription: xbzProduct.descricao || name,
-      productType: 'PHYSICAL',
-      slug: slug,
-      visible: false,
-      physicalProperties: {
-        shippingWeightRange: { minValue: 0, maxValue: 1 },
-      },
-      media: {
-        mainMedia: {
-          image: {
-            url: staticUrl,
-            altText: truncate(name, 80),
-          },
-        },
-        items: [
-          {
-            image: {
-              url: staticUrl,
-              altText: truncate(name, 80),
-            },
-          },
-        ],
-      },
-      variantsInfo: {
-        variants: [
-          {
-            sku: `TESTE6-${xbzProduct.codigoXbz}`,
-            price: {
-              actualPrice: { amount: '10.00' },
-            },
-            inventoryItem: {
-              trackingMethod: 'QUANTITY',
-              quantity: 999,
-            },
-          },
-        ],
+    dataCollectionId: CONFIG.WIX_COLLECTION,
+    dataItem: {
+      data: {
+        name: name,
+        description: xbzProduct.descricao || '',
+        sku: xbzProduct.codigoXbz,
+        uRLImagem: xbzProduct.imageLink.trim(),
+        price: 10.00,
       },
     },
   };
 
+  console.log(`\n📦 Criando: ${name}`);
+  console.log(`   SKU: ${xbzProduct.codigoXbz}`);
+  console.log(`   Foto: ${xbzProduct.imageLink}`);
+
   const res = await request(
-    `${CONFIG.WIX_API_BASE}/stores/v3/products-with-inventory`,
+    `${CONFIG.WIX_API_BASE}/wix-data/v2/items`,
     {
       method: 'POST',
       headers: {
@@ -163,16 +96,18 @@ async function createWixProduct(xbzProduct, staticUrl) {
     body
   );
 
-  console.log(`   Wix status: ${res.status}`);
+  console.log(`   Wix Data status: ${res.status}`);
   if (res.status !== 200 && res.status !== 201) {
     console.warn(`   Erro: ${res.body.substring(0, 300)}`);
+  } else {
+    console.log(`   ✅ Item criado na coleção!`);
   }
 
   return { status: res.status, body: res.body };
 }
 
 async function sync() {
-  console.log('🧪 TESTE v6 — URL estática wixstatic.com');
+  console.log('🧪 TESTE CMS — Wix Data API com Catalog Collection');
   console.log(`📅 ${new Date().toLocaleString('pt-BR')}`);
   console.log('='.repeat(50));
 
@@ -183,20 +118,10 @@ async function sync() {
     const xbzProducts = await getXbzProducts();
 
     for (const product of xbzProducts) {
-      console.log(`\n📦 Produto: ${getProductName(product)}`);
-
       try {
-        const fileName = product.imageLink.trim().split('/').pop();
-        const { staticUrl } = await importImageToWix(product.imageLink.trim(), fileName);
-
-        // Aguardar processamento
-        await sleep(3000);
-
-        const result = await createWixProduct(product, staticUrl);
-
+        const result = await createCmsItem(product);
         if (result.status === 200 || result.status === 201) {
           criados++;
-          console.log(`   ✅ Produto criado!`);
         } else {
           erros++;
         }
@@ -204,8 +129,7 @@ async function sync() {
         erros++;
         console.warn(`   ⚠️ Erro: ${err.message}`);
       }
-
-      await sleep(1000);
+      await sleep(300);
     }
   } catch (err) {
     console.error(`❌ Erro crítico: ${err.message}`);
@@ -215,7 +139,7 @@ async function sync() {
   console.log('📊 RESULTADO:');
   console.log(`   ✅ Criados: ${criados}`);
   console.log(`   ❌ Erros: ${erros}`);
-  console.log('\n👉 Verifique no Wix se os produtos têm FOTOS!');
+  console.log('\n👉 Verifique no Wix CMS se os 5 itens aparecem com URL de imagem!');
   console.log('='.repeat(50));
 }
 
