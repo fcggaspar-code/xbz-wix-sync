@@ -54,14 +54,10 @@ function request(url, options = {}, body = null) {
   });
 }
 
+// ============================================================
+// IMPORTAR IMAGEM E AGUARDAR FICAR READY
+// ============================================================
 async function importAndWaitImage(imageUrl, fileName) {
-  const importBody = {
-    url: imageUrl,
-    mimeType: 'image/jpeg',
-    mediaType: 'IMAGE',
-    displayName: fileName,
-  };
-
   const importRes = await request(
     `${CONFIG.WIX_API_BASE}/site-media/v1/files/import`,
     {
@@ -72,24 +68,20 @@ async function importAndWaitImage(imageUrl, fileName) {
         'Content-Type': 'application/json',
       },
     },
-    importBody
+    { url: imageUrl, mimeType: 'image/jpeg', mediaType: 'IMAGE', displayName: fileName }
   );
 
   if (importRes.status !== 200 && importRes.status !== 201) {
-    throw new Error(`Erro ao importar imagem: ${importRes.status} - ${importRes.body.substring(0, 200)}`);
+    throw new Error(`Erro ao importar imagem: ${importRes.status}`);
   }
 
   const importData = JSON.parse(importRes.body);
   const fileId = importData.file?.id;
-  console.log(`   📷 Imagem importada: ${fileId} | Status: ${importData.file?.operationStatus}`);
+  console.log(`   📷 Imagem importada: ${fileId}`);
 
-  let attempts = 0;
-  const maxAttempts = 10;
-
-  while (attempts < maxAttempts) {
+  // Aguardar READY
+  for (let i = 0; i < 10; i++) {
     await sleep(3000);
-    attempts++;
-
     const checkRes = await request(
       `${CONFIG.WIX_API_BASE}/site-media/v1/files/${encodeURIComponent(fileId)}`,
       {
@@ -100,23 +92,21 @@ async function importAndWaitImage(imageUrl, fileName) {
         },
       }
     );
-
     if (checkRes.status === 200) {
       const checkData = JSON.parse(checkRes.body);
       const status = checkData.file?.operationStatus;
-      console.log(`   ⏳ Tentativa ${attempts}: status = ${status}`);
-
+      console.log(`   ⏳ Tentativa ${i+1}: ${status}`);
       if (status === 'READY') {
-        const wixUrl = `wix:image://v1/${fileId}/${fileName}#originWidth=800&originHeight=800`;
-        console.log(`   ✅ Imagem pronta! URL: ${wixUrl}`);
-        return { fileId, wixUrl };
+        return fileId;
       }
     }
   }
-
-  throw new Error(`Imagem não ficou READY após ${maxAttempts} tentativas`);
+  throw new Error('Imagem não ficou READY');
 }
 
+// ============================================================
+// BUSCAR PRODUTOS DA XBZ
+// ============================================================
 async function getXbzProducts() {
   console.log('🔄 Buscando produtos da XBZ...');
   const res = await request(CONFIG.XBZ_API, {
@@ -130,8 +120,11 @@ async function getXbzProducts() {
   return comFoto.slice(0, CONFIG.LIMITE_TESTE);
 }
 
-async function createWixProduct(xbzProduct, wixUrl) {
-  const slug = sanitizeSlug(`teste8-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
+// ============================================================
+// CRIAR PRODUTO NO WIX (sem imagem)
+// ============================================================
+async function createWixProduct(xbzProduct) {
+  const slug = sanitizeSlug(`teste9-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
   const name = getProductName(xbzProduct);
 
   const body = {
@@ -144,33 +137,12 @@ async function createWixProduct(xbzProduct, wixUrl) {
       physicalProperties: {
         shippingWeightRange: { minValue: 0, maxValue: 1 },
       },
-      media: {
-        mainMedia: {
-          image: {
-            url: wixUrl,
-            altText: truncate(name, 80),
-          },
-        },
-        items: [
-          {
-            image: {
-              url: wixUrl,
-              altText: truncate(name, 80),
-            },
-          },
-        ],
-      },
       variantsInfo: {
         variants: [
           {
-            sku: `TESTE8-${xbzProduct.codigoXbz}`,
-            price: {
-              actualPrice: { amount: '10.00' },
-            },
-            inventoryItem: {
-              trackingMethod: 'QUANTITY',
-              quantity: 999,
-            },
+            sku: `TESTE9-${xbzProduct.codigoXbz}`,
+            price: { actualPrice: { amount: '10.00' } },
+            inventoryItem: { trackingMethod: 'QUANTITY', quantity: 999 },
           },
         ],
       },
@@ -190,17 +162,60 @@ async function createWixProduct(xbzProduct, wixUrl) {
     body
   );
 
-  console.log(`   Wix Stores status: ${res.status}`);
-  console.log(`   Resposta: ${res.body.substring(0, 500)}`);
   if (res.status !== 200 && res.status !== 201) {
-    console.warn(`   Erro detalhado: ${res.body.substring(0, 300)}`);
+    throw new Error(`Erro ao criar produto: ${res.status} - ${res.body.substring(0, 200)}`);
   }
 
-  return { status: res.status, body: res.body };
+  const data = JSON.parse(res.body);
+  return data.product?.id;
 }
 
+// ============================================================
+// ADICIONAR IMAGEM AO PRODUTO
+// ============================================================
+async function addImageToProduct(productId, fileId, name) {
+  const wixUrl = `wix:image://v1/${fileId}/${fileId}#originWidth=800&originHeight=800`;
+
+  const body = {
+    mediaItems: [
+      {
+        image: {
+          url: wixUrl,
+          altText: truncate(name, 80),
+        },
+        setAsMainMedia: true,
+      },
+    ],
+  };
+
+  const res = await request(
+    `${CONFIG.WIX_API_BASE}/stores/v3/products/${productId}/media`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${CONFIG.WIX_TOKEN}`,
+        'wix-site-id': CONFIG.WIX_SITE_ID,
+        'Content-Type': 'application/json',
+      },
+    },
+    body
+  );
+
+  console.log(`   🖼️ Adicionar imagem status: ${res.status}`);
+  if (res.status !== 200 && res.status !== 201) {
+    console.warn(`   Erro imagem: ${res.body.substring(0, 300)}`);
+  } else {
+    console.log(`   Resposta imagem: ${res.body.substring(0, 300)}`);
+  }
+
+  return res.status;
+}
+
+// ============================================================
+// SINCRONIZAÇÃO PRINCIPAL
+// ============================================================
 async function sync() {
-  console.log('🧪 TESTE v8 — Log resposta completa do Wix');
+  console.log('🧪 TESTE v9 — Criar produto + endpoint separado para imagem');
   console.log(`📅 ${new Date().toLocaleString('pt-BR')}`);
   console.log('='.repeat(50));
 
@@ -211,20 +226,23 @@ async function sync() {
     const xbzProducts = await getXbzProducts();
 
     for (const product of xbzProducts) {
-      console.log(`\n📦 Produto: ${getProductName(product)}`);
+      const name = getProductName(product);
+      console.log(`\n📦 Produto: ${name}`);
 
       try {
+        // 1. Importar imagem e aguardar READY
         const fileName = product.imageLink.trim().split('/').pop();
-        const { wixUrl } = await importAndWaitImage(product.imageLink.trim(), fileName);
+        const fileId = await importAndWaitImage(product.imageLink.trim(), fileName);
 
-        const result = await createWixProduct(product, wixUrl);
+        // 2. Criar produto sem imagem
+        const productId = await createWixProduct(product);
+        console.log(`   ✅ Produto criado: ${productId}`);
 
-        if (result.status === 200 || result.status === 201) {
-          criados++;
-          console.log(`   ✅ Produto criado!`);
-        } else {
-          erros++;
-        }
+        // 3. Adicionar imagem ao produto
+        await sleep(1000);
+        await addImageToProduct(productId, fileId, name);
+
+        criados++;
       } catch (err) {
         erros++;
         console.warn(`   ⚠️ Erro: ${err.message}`);
