@@ -54,9 +54,6 @@ function request(url, options = {}, body = null) {
   });
 }
 
-// ============================================================
-// IMPORTAR IMAGEM E AGUARDAR FICAR READY
-// ============================================================
 async function importAndWaitImage(imageUrl, fileName) {
   const importRes = await request(
     `${CONFIG.WIX_API_BASE}/site-media/v1/files/import`,
@@ -79,7 +76,6 @@ async function importAndWaitImage(imageUrl, fileName) {
   const fileId = importData.file?.id;
   console.log(`   📷 Imagem importada: ${fileId}`);
 
-  // Aguardar READY
   for (let i = 0; i < 10; i++) {
     await sleep(3000);
     const checkRes = await request(
@@ -96,17 +92,12 @@ async function importAndWaitImage(imageUrl, fileName) {
       const checkData = JSON.parse(checkRes.body);
       const status = checkData.file?.operationStatus;
       console.log(`   ⏳ Tentativa ${i+1}: ${status}`);
-      if (status === 'READY') {
-        return fileId;
-      }
+      if (status === 'READY') return fileId;
     }
   }
   throw new Error('Imagem não ficou READY');
 }
 
-// ============================================================
-// BUSCAR PRODUTOS DA XBZ
-// ============================================================
 async function getXbzProducts() {
   console.log('🔄 Buscando produtos da XBZ...');
   const res = await request(CONFIG.XBZ_API, {
@@ -120,11 +111,8 @@ async function getXbzProducts() {
   return comFoto.slice(0, CONFIG.LIMITE_TESTE);
 }
 
-// ============================================================
-// CRIAR PRODUTO NO WIX (sem imagem)
-// ============================================================
 async function createWixProduct(xbzProduct) {
-  const slug = sanitizeSlug(`teste9-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
+  const slug = sanitizeSlug(`teste10-${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
   const name = getProductName(xbzProduct);
 
   const body = {
@@ -140,7 +128,7 @@ async function createWixProduct(xbzProduct) {
       variantsInfo: {
         variants: [
           {
-            sku: `TESTE9-${xbzProduct.codigoXbz}`,
+            sku: `TESTE10-${xbzProduct.codigoXbz}`,
             price: { actualPrice: { amount: '10.00' } },
             inventoryItem: { trackingMethod: 'QUANTITY', quantity: 999 },
           },
@@ -170,26 +158,20 @@ async function createWixProduct(xbzProduct) {
   return data.product?.id;
 }
 
-// ============================================================
-// ADICIONAR IMAGEM AO PRODUTO
-// ============================================================
-async function addImageToProduct(productId, fileId, name) {
-  const wixUrl = `wix:image://v1/${fileId}/${fileId}#originWidth=800&originHeight=800`;
-
+async function addImageToProduct(productId, fileId) {
+  // Usando endpoint V1 do Catalog para adicionar mídia
   const body = {
     mediaItems: [
       {
-        image: {
-          url: wixUrl,
-          altText: truncate(name, 80),
-        },
-        setAsMainMedia: true,
+        mediaType: 'IMAGE',
+        url: `wix:image://v1/${fileId}/${fileId}#originWidth=800&originHeight=800`,
+        title: 'Imagem do produto',
       },
     ],
   };
 
   const res = await request(
-    `${CONFIG.WIX_API_BASE}/stores/v3/products/${productId}/media`,
+    `${CONFIG.WIX_API_BASE}/stores/v1/products/${productId}/media`,
     {
       method: 'POST',
       headers: {
@@ -201,21 +183,14 @@ async function addImageToProduct(productId, fileId, name) {
     body
   );
 
-  console.log(`   🖼️ Adicionar imagem status: ${res.status}`);
-  if (res.status !== 200 && res.status !== 201) {
-    console.warn(`   Erro imagem: ${res.body.substring(0, 300)}`);
-  } else {
-    console.log(`   Resposta imagem: ${res.body.substring(0, 300)}`);
-  }
+  console.log(`   🖼️ Adicionar imagem (V1) status: ${res.status}`);
+  console.log(`   Resposta: ${res.body.substring(0, 300)}`);
 
   return res.status;
 }
 
-// ============================================================
-// SINCRONIZAÇÃO PRINCIPAL
-// ============================================================
 async function sync() {
-  console.log('🧪 TESTE v9 — Criar produto + endpoint separado para imagem');
+  console.log('🧪 TESTE v10 — Criar produto V3 + Adicionar imagem V1');
   console.log(`📅 ${new Date().toLocaleString('pt-BR')}`);
   console.log('='.repeat(50));
 
@@ -230,24 +205,17 @@ async function sync() {
       console.log(`\n📦 Produto: ${name}`);
 
       try {
-        // 1. Importar imagem e aguardar READY
         const fileName = product.imageLink.trim().split('/').pop();
         const fileId = await importAndWaitImage(product.imageLink.trim(), fileName);
-
-        // 2. Criar produto sem imagem
         const productId = await createWixProduct(product);
         console.log(`   ✅ Produto criado: ${productId}`);
-
-        // 3. Adicionar imagem ao produto
         await sleep(1000);
-        await addImageToProduct(productId, fileId, name);
-
+        await addImageToProduct(productId, fileId);
         criados++;
       } catch (err) {
         erros++;
         console.warn(`   ⚠️ Erro: ${err.message}`);
       }
-
       await sleep(1000);
     }
   } catch (err) {
