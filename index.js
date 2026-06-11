@@ -21,20 +21,12 @@ function truncate(str, max) {
 
 function sanitizeSlug(str) {
   if (!str) return '';
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
+  return str.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
 }
 
 function getProductName(product) {
-  if (product.descricao && product.descricao.trim().length > 0) {
-    return truncate(product.descricao.trim(), 80);
-  }
-  if (product.codigoXbz && product.codigoXbz.trim().length > 0) {
-    return truncate(product.codigoXbz.trim(), 80);
-  }
+  if (product.descricao && product.descricao.trim().length > 0) return truncate(product.descricao.trim(), 80);
+  if (product.codigoXbz && product.codigoXbz.trim().length > 0) return truncate(product.codigoXbz.trim(), 80);
   return 'Produto sem nome';
 }
 
@@ -61,6 +53,9 @@ function request(url, options = {}, body = null) {
   });
 }
 
+// ============================================================
+// BUSCAR PRODUTOS DA XBZ
+// ============================================================
 async function getXbzProducts() {
   console.log('🔄 Buscando produtos da XBZ...');
   const res = await request(CONFIG.XBZ_API, {
@@ -73,19 +68,16 @@ async function getXbzProducts() {
   return products;
 }
 
+// ============================================================
+// BUSCAR SKUs EXISTENTES NO WIX
+// ============================================================
 async function getWixProductSkus() {
   console.log('🔄 Buscando produtos existentes no Wix...');
   const skuMap = {};
-  let hasMore = true;
   let offset = 0;
+  let hasMore = true;
 
   while (hasMore) {
-    const bodyObj = {
-      query: {
-        paging: { limit: 100, offset: offset },
-      },
-    };
-
     const res = await request(
       `${CONFIG.WIX_API_BASE}/stores/v3/products/query`,
       {
@@ -96,11 +88,11 @@ async function getWixProductSkus() {
           'Content-Type': 'application/json',
         },
       },
-      bodyObj
+      { query: { paging: { limit: 100, offset } } }
     );
 
     if (res.status !== 200) {
-      console.warn(`⚠️ Erro ao buscar produtos Wix: ${res.status} - ${res.body.substring(0, 100)}`);
+      console.warn(`⚠️ Erro ao buscar produtos Wix: ${res.status}`);
       break;
     }
 
@@ -108,8 +100,7 @@ async function getWixProductSkus() {
     const products = data.products || [];
 
     for (const p of products) {
-      // Buscar SKU dentro de variantsInfo
-      const sku = p.sku || (p.variantsInfo?.variants?.[0]?.sku) || null;
+      const sku = p.sku || p.variantsInfo?.variants?.[0]?.sku || null;
       if (sku) skuMap[sku] = p.id;
     }
 
@@ -121,10 +112,13 @@ async function getWixProductSkus() {
     }
   }
 
-  console.log(`✅ ${Object.keys(skuMap).length} produtos encontrados no Wix`);
+  console.log(`✅ ${Object.keys(skuMap).length} produtos já existem no Wix`);
   return skuMap;
 }
 
+// ============================================================
+// CRIAR PRODUTO NO WIX
+// ============================================================
 async function createWixProduct(xbzProduct) {
   const slug = sanitizeSlug(`${xbzProduct.codigoAmigavel}-${xbzProduct.codigoXbz}`);
   const name = getProductName(xbzProduct);
@@ -137,48 +131,28 @@ async function createWixProduct(xbzProduct) {
       slug: slug,
       visible: false,
       physicalProperties: {
-        weight: 0,
-        shippingRequired: true,
+        shippingWeightRange: { minValue: 0, maxValue: 1 },
       },
       variantsInfo: {
-        variants: [
-          {
-            sku: xbzProduct.codigoXbz,
-            price: {
-              basePrice: { amount: '10.00', currency: 'BRL' },
-              actualPrice: { amount: '10.00', currency: 'BRL' },
-            },
-            stock: {
-              inStock: true,
-              quantity: 999,
-            },
-          },
-        ],
+        variants: [{
+          sku: xbzProduct.codigoXbz,
+          price: { actualPrice: { amount: '0.00' } },
+        }],
       },
     },
   };
 
+  // Adicionar imagem se disponível
   if (xbzProduct.imageLink && xbzProduct.imageLink.trim().length > 0) {
     body.product.media = {
-      mainMedia: {
-        image: {
-          url: xbzProduct.imageLink.trim(),
-          altText: truncate(name, 80),
-        },
-      },
-      items: [
-        {
-          image: {
-            url: xbzProduct.imageLink.trim(),
-            altText: truncate(name, 80),
-          },
-        },
-      ],
+      itemsInfo: {
+        items: [{ url: xbzProduct.imageLink.trim() }]
+      }
     };
   }
 
   const res = await request(
-    `${CONFIG.WIX_API_BASE}/stores/v3/products`,
+    `${CONFIG.WIX_API_BASE}/stores/v3/products-with-inventory`,
     {
       method: 'POST',
       headers: {
@@ -193,14 +167,17 @@ async function createWixProduct(xbzProduct) {
   return { status: res.status, body: res.body };
 }
 
+// ============================================================
+// SINCRONIZAÇÃO PRINCIPAL
+// ============================================================
 async function sync() {
   console.log('🚀 Iniciando sincronização XBZ → Wix');
   console.log(`📅 ${new Date().toLocaleString('pt-BR')}`);
   console.log('='.repeat(50));
 
   let criados = 0;
-  let erros = 0;
   let ignorados = 0;
+  let erros = 0;
 
   try {
     const xbzProducts = await getXbzProducts();
@@ -211,6 +188,7 @@ async function sync() {
     for (let i = 0; i < xbzProducts.length; i++) {
       const product = xbzProducts[i];
 
+      // Pular se já existe no Wix
       if (wixSkus[product.codigoXbz]) {
         ignorados++;
         continue;
