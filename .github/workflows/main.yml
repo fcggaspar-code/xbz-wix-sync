@@ -16,4 +16,4 @@ jobs:
       - name: Rodar sincronização
         env:
           WIX_TOKEN: ${{ secrets.WIX_TOKEN }}
-        run: node index.js
+       run: node deletar.js
